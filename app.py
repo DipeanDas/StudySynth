@@ -1,65 +1,166 @@
 import streamlit as st
-from api_call import note_generator, audio_transcription, quiz_generator 
-from PIL import Image
 
-st.title("Note Summary & Quiz Generator")
-st.markdown("Upload upto 3 images of your notes to genrate a summary and quiz questions.")
+from components.sidebar import render_sidebar
+from components.notes_view import render_notes
+from components.quiz_view import render_quiz
+from components.audio_view import render_audio
+
+from services.ai_service import generate_notes_and_quiz
+from services.audio_service import generate_audio
+
+from utils.parser import parse_response
+from utils.image_utils import process_images
+
+@st.cache_data
+def get_ai_output(images, difficulty):
+    return generate_notes_and_quiz(images, difficulty)
+
+st.markdown(
+    """
+    <style>
+
+    /* Sidebar background */
+    section[data-testid="stSidebar"] {
+        background-color: #0f172a;
+    }
+
+    /* Sidebar text */
+    section[data-testid="stSidebar"] * {
+        color: #e2e8f0;
+    }
+
+    /* Section headers */
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3 {
+        color: #ffffff;
+        font-weight: 700;
+    }
+
+    /* File uploader box */
+    section[data-testid="stSidebar"] div[data-testid="stFileUploader"] {
+        background-color: #111827;
+        border-radius: 10px;
+        padding: 10px;
+        border: 1px solid #1f2937;
+    }
+
+    /* Selectbox */
+    section[data-testid="stSidebar"] div[data-baseweb="select"] {
+        background-color: #111827;
+        border-radius: 8px;
+    }
+
+    /* Button */
+    section[data-testid="stSidebar"] button {
+        background: linear-gradient(90deg, #4F46E5, #06B6D4);
+        color: white;
+        border-radius: 10px;
+        font-weight: 600;
+        border: none;
+    }
+
+    section[data-testid="stSidebar"] button:hover {
+        transform: scale(1.02);
+        transition: 0.2s;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    """
+    <h1 style='text-align: center; font-size: 52px; font-weight: 2000; 
+    background: linear-gradient(90deg, #4F46E5, #06B6D4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;'>
+    StudySynth
+    </h1>
+    """,
+    unsafe_allow_html=True
+)
+st.markdown(
+    "<p style='text-align: center; font-size: 24px; color: white;'>"
+    "Synthesize your notes into smarter learning"
+    "</p>",
+    unsafe_allow_html=True
+)
+
 st.divider()
 
+# ---------------- SESSION STATE ----------------
+if "summary" not in st.session_state:
+    st.session_state.summary = None
+
+if "questions" not in st.session_state:
+    st.session_state.questions = None
+
+if "generated" not in st.session_state:
+    st.session_state.generated = False
+
+if "generate" not in st.session_state:
+    st.session_state.generate = False
+
+if "quiz_submitted" not in st.session_state:
+    st.session_state.quiz_submitted = False
+
+if "user_answers" not in st.session_state:
+    st.session_state.user_answers = {}
+
+
+# ---------------- SIDEBAR ----------------
 with st.sidebar:
-    st.header("Controls")
-    #image uploader
-    images=st.file_uploader("Upload your notes (max 3 images)", 
-                     type=["png", "jpg", "jpeg"], 
-                     accept_multiple_files=True)
-    pil_image= []
-    for img in images:
-        pil_image.append(Image.open(img))
-    if images:
-        if len(images) > 3:
-            st.error("Please upload a maximum of 3 images.")
-        else:
-            col=st.columns(len(images))
-            st.subheader("Uploaded Images")
-            for i,img in enumerate(images):
-                with col[i]:
-                    st.image(img)
+    images, difficulty, pressed = render_sidebar()
 
-    #Quiz Difficulty
-    s_o=st.selectbox("Select Quiz Difficulty Level", ["Easy", "Medium", "Hard"], index=None,placeholder="Select Difficulty Level")
-    # if s_o:
-    #     st.markdown(f"You selected **{s_o}** option as difficulty level")
-    # else:
-    #     st.error("You must select a difficulty level.")
-    pressed=st.button("Generate Summary & Quiz", type="primary")
-
+# trigger generation
 if pressed:
-    if not images:
-        st.error("You must upload images of your notes.") 
-    if not s_o:
-        st.error("You must select a difficulty level.")  
-    if images and s_o:
-        #note
-        with st.container(border=True):
-            st.subheader("Your Notes")
-            with st.spinner("Wait for AI to summarize your notes..."):
-                generated_notes=note_generator(pil_image)
-                st.markdown(generated_notes)
-        #audio
-        with st.container(border=True):
-            st.subheader("Audio Transcription")
-            with st.spinner("Wait for AI to transcribe your notes into audio..."):
-                generated_notes= generated_notes.replace("#","")
-                generated_notes= generated_notes.replace("*","")
-                generated_notes= generated_notes.replace("-","")
-                generated_notes= generated_notes.replace("`","")
-                generated_notes= generated_notes.replace("(","")
-                generated_notes= generated_notes.replace(")","")
-                audio_transcript= audio_transcription(generated_notes)
-                st.audio(audio_transcript)
-        #quiz
-        with st.container(border=True):
-            st.subheader(f"Quiz : ({s_o}) Difficulty")
-            with st.spinner("Wait for AI to generate quiz questions based on your notes..."):
-                quizzes= quiz_generator(pil_image,s_o)
-                st.markdown(quizzes)
+    st.session_state.generate = True
+
+
+# ---------------- GENERATE ----------------
+if st.session_state.generate:
+
+    if not images or not difficulty:
+        st.error("Please Upload Images and Select Difficulty Level")
+        st.session_state.generate = False
+
+    else:
+        processed_images = process_images(images)
+
+        with st.spinner("Wait for AI to summarize your notes..."):
+            raw = get_ai_output(processed_images, difficulty)
+
+        summary, questions = parse_response(raw)
+
+        # store results
+        st.session_state.summary = summary
+        st.session_state.questions = questions
+        st.session_state.generated = True
+
+        # reset quiz state
+        st.session_state.quiz_submitted = False
+        st.session_state.user_answers = {}
+
+        # IMPORTANT: stop re-running generation
+        st.session_state.generate = False
+
+
+# ---------------- DISPLAY OUTPUT ----------------
+if st.session_state.generated:
+
+    # NOTES    
+    render_notes(st.session_state.summary)
+
+    # AUDIO
+    with st.spinner("Generating audio from your notes..."):
+        audio = generate_audio(st.session_state.summary)
+
+    
+    render_audio(audio)
+
+    # QUIZ
+    with st.spinner("Creating quiz based on your notes..."):
+        st.success("Solve the Quiz!")
+
+    render_quiz(st.session_state.questions)
