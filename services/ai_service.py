@@ -15,7 +15,8 @@ SUMMARY:
 QUIZ:
 Q1|question
 a) option
-
+b) option
+c) option
 ANS: a
 """
     response = client.models.generate_content(

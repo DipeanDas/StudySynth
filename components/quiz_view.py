@@ -1,4 +1,5 @@
 import streamlit as st
+import re
 
 
 def render_quiz(questions):
@@ -37,10 +38,16 @@ def render_quiz(questions):
 
         for i, q in enumerate(questions):
             user_ans = st.session_state.user_answers[i]
-            correct_letter = q["answer"]
+
+            # 🔧 Normalize correct answer (handles a, A, a), etc.)
+            correct_letter = re.sub(r"[^a-zA-Z]", "", q["answer"]).lower()
+
+            # 🔧 Extract option letter safely
+            def get_option_letter(option):
+                return option.strip()[0].lower()
 
             correct_option = next(
-                (opt for opt in q["options"] if opt.startswith(correct_letter)),
+                (opt for opt in q["options"] if get_option_letter(opt) == correct_letter),
                 None
             )
 
@@ -49,7 +56,10 @@ def render_quiz(questions):
                 st.success(f"Q{i+1}: Correct")
             else:
                 st.error(f"Q{i+1}: Wrong")
-                st.write(f"Correct Answer: **{correct_option}**")
+                if correct_option:
+                    st.write(f"Correct Answer: **{correct_option}**")
+                else:
+                    st.write("Correct Answer: Not detected (format issue)")
 
         st.divider()
         st.success(f"Final Score: {score}/{len(questions)}")
